@@ -1,6 +1,7 @@
 #include    <unistd.h>
 #include    <cstdio>
 #include    <cstring>
+#include    <memory>
 
 #include    "lew/wrapper.h"
 #include    "gtest/gtest.h"
@@ -104,7 +105,7 @@ public:
     }
     //  start try to connect.
     void    onTryToConnect(Timer* tmr, void* arg){
-        TcpServer*     to  = (TcpServer*)arg;
+        std::unique_ptr<TcpServer>&     to  = *(std::unique_ptr<TcpServer>*)arg;
         //
         if (to->startTcpClient("127.0.0.1", 9988 ) != 0){
             stat_data.tcp_client_start++;
@@ -115,7 +116,7 @@ public:
     }
     //  start try to send HTTP request
     void    onTryToRequest(Timer* tmr, void* arg){
-        TcpServer*         to      = (TcpServer*)arg;
+        std::unique_ptr<TcpServer>&     to = *(std::unique_ptr<TcpServer>*)arg;
         Connection*  conn    = 0;
         printf( "%s\n", __FUNCTION__);
         //
@@ -130,7 +131,7 @@ public:
 };
 
 TEST(TcpServer,  start_stop){
-    TcpServer*     to  = new TcpServer();
+    std::unique_ptr<TcpServer> to(new TcpServer());
     ASSERT_TRUE( to != NULL );
     to->addTimer(100, (timer_handler_t)&TcpServer::onStopTimer, 0);
     to->start();
@@ -138,14 +139,13 @@ TEST(TcpServer,  start_stop){
     to->stop();
     to->stop();
     to->clean();
-    delete  to;
     //
     ASSERT_EQ( stat_data.start,     1);
     ASSERT_EQ( stat_data.stop,      1);
 }
 
 TEST(TcpServer,  add_del_timer){
-    TcpServer*     to  = new TcpServer();
+    std::unique_ptr<TcpServer>  to(new TcpServer());
     ASSERT_TRUE( to != NULL );
     to->addTimer(1000 * 2, (timer_handler_t)&TcpServer::onStopTimer, 0);
     uintptr_t       arg = 0x12345678;
@@ -155,21 +155,18 @@ TEST(TcpServer,  add_del_timer){
     EXPECT_TRUE( (tmr = to->addTimer(100, (timer_handler_t)&TcpServer::onTimer, (void*)arg)) != nullptr );
     to->start();
     EXPECT_FALSE( to->delTimer( tmr ) );
-    to->stop();
     to->clean();
-    delete  to;
     //
     EXPECT_EQ(  stat_data.timer,    1);
 }
 
 TEST(TcpServer,  start_server){
-    TcpServer*     to  = new TcpServer();
+    std::unique_ptr<TcpServer>  to(new TcpServer() );
     to->addTimer(2000,(timer_handler_t)&TcpServer::onStopTimer, 0);
-    to->addTimer(200 ,(timer_handler_t)&TcpServer::onTryToConnect, to);
+    to->addTimer(200 ,(timer_handler_t)&TcpServer::onTryToConnect, &to);
     EXPECT_TRUE( to->startTcpServer("127.0.0.1", 9988) );
     to->start();
     to->clean();
-    delete  to;
     //
     EXPECT_EQ(  stat_data.tcp_client_start,     1);
     EXPECT_EQ(  stat_data.new_conn,             2);
@@ -180,14 +177,12 @@ TEST(TcpServer,  start_server){
 }
 
 TEST(HttpServer,   start_http){
-    TcpServer*     to  = new TcpServer();
+    std::unique_ptr<TcpServer>  to( new TcpServer() );
     to->addTimer(2000, (timer_handler_t)&TcpServer::onStopTimer, 0);
-    to->addTimer(200 , (timer_handler_t)&TcpServer::onTryToRequest, to);
+    to->addTimer(200 , (timer_handler_t)&TcpServer::onTryToRequest, &to);
     EXPECT_TRUE( to->startHttpServer("127.0.0.1", 9988) );
     to->start();
-    to->stop();
     to->clean();
-    delete      to;
     //
     EXPECT_EQ(  stat_data.http_client_start,    1);
     EXPECT_EQ(  stat_data.http_server_conn,     1);

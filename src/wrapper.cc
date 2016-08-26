@@ -40,7 +40,7 @@ NS_LEW_BEGIN();
 
 static  bool    _init_lib   = false;
 
-bool
+static  bool
 init_lib(){
     int     ret = 0;
     if (! _init_lib ){
@@ -51,7 +51,7 @@ init_lib(){
 }
 
 
-int
+static  int
 get_host_port(int fd, std::string&  remote, uint16_t&   port){
     union{
         struct  sockaddr_in     addr;
@@ -91,41 +91,50 @@ _timer_cb(int   s,  short what,  void* arg){
             (owner->*handler)(t, t->args);
         }
         owner->_timerSet.erase( t );
-        event_del( t->evt );
-        event_free( t->evt );
         delete  t;
     }
 }
 
 void
 _event_cb(struct bufferevent*   bev, short  evt, void* ctx ){
-    Connection*     conn    = (Connection*)ctx;
-    Wrapper*        wrapper = conn->owner();
-    if (evt & (BEV_EVENT_EOF | BEV_EVENT_ERROR) ){
-        bool    reconnect   =
-            (conn->retryTimes() && conn->type() ==Connection::CONN_TCP_CLIENT);
-        bool    remove_conn = true;
-        if (reconnect){
-            if (conn->bev() ){
-                bufferevent_free(conn->bev() );
-                conn->setBev( nullptr );
-            }
-            conn->_status   = Connection::DISCONNECTED;
-            remove_conn     = (wrapper->tcpClientReconnect( conn ) != 0 );
-        }
-        if (remove_conn){
-            wrapper->onConnectionClose(conn);
-            if (conn->type() == Connection::CONN_TCP_CLIENT ){
-                wrapper->tcpClientConnectionSet().erase( conn );
-            }
-            else{
-                wrapper->tcpServerConnectionSet().erase( conn );
-            }
-            delete  conn;
+    Connection*             conn    = (Connection*)ctx;
+    Wrapper*                wrapper = conn->owner();
+    bool                    is_live = true;
+    ConnectionSet::iterator it      =
+        wrapper->tcpServerConnectionSet().find( conn );
+    if (it == wrapper->tcpServerConnectionSet().end() ){
+        it = wrapper->tcpClientConnectionSet().find( conn );
+        if ( it == wrapper->tcpClientConnectionSet().end() ){
+            is_live = false;
         }
     }
-    if (evt & BEV_EVENT_CONNECTED){
-        conn->_status   = Connection::CONNECTED;
+    if ( is_live ){
+        if (evt & (BEV_EVENT_EOF | BEV_EVENT_ERROR) ){
+            bool    remove_conn = true;
+            bool    reconnect   =
+                (conn->retryTimes() &&
+                 conn->type() ==Connection::CONN_TCP_CLIENT);
+            if (reconnect){
+                if (conn->bev() ){
+                    bufferevent_free(conn->bev() );
+                    conn->setBev( nullptr );
+                }
+                conn->_status   = Connection::DISCONNECTED;
+                remove_conn     = (wrapper->tcpClientReconnect( conn ) != 0 );
+            }
+            if (remove_conn){
+                if (conn->type() == Connection::CONN_TCP_CLIENT ){
+                    wrapper->tcpClientConnectionSet().erase( conn );
+                }
+                else{
+                    wrapper->tcpServerConnectionSet().erase( conn );
+                }
+                delete  conn;
+            }
+        }
+        if (evt & BEV_EVENT_CONNECTED){
+            conn->_status   = Connection::CONNECTED;
+        }
     }
 }
 
@@ -177,7 +186,11 @@ static void
 _http_client_close_cb( struct evhttp_connection*    evconn, void*  ctx){
     Connection*     conn    = (Connection*)ctx;
     Wrapper*        wrapper = conn->owner();
-    wrapper->onConnectionClose( conn );
+    ConnectionSet&  cs      = wrapper->httpServerConnectionSet();
+    if (cs.find( conn ) != cs.end() ){
+        delete conn;
+        wrapper->httpServerConnectionSet().erase( conn );
+    }
 }
 
 static void
@@ -213,6 +226,15 @@ _http_req_cb( struct evhttp_request*  req, void * ctx){
 }
 
 ///////////////////////////////////
+Timer::~Timer(){
+    if (evt){
+        event_del( evt );
+        event_free( evt );
+    }
+}
+
+
+///////////////////////////////////
 static ConstructException   _constructException;
 Wrapper::Wrapper(){
     if (! init_lib() ){
@@ -226,12 +248,7 @@ Wrapper::Wrapper(){
 }
 
 Wrapper::~Wrapper(){
-    TimerSet::iterator      it;
-    for(it = _timerSet.begin(); it != _timerSet.end(); it++){
-        Timer*  t   = *it;
-        if (t->evt){
-            event_free( t->evt );
-        }
+    for( auto t : _timerSet ){
         delete t;
     }
     if (_base){
@@ -256,7 +273,6 @@ Wrapper::addTimer(int   ms, timer_handler_t handler, void* arg){
         tv.tv_sec       = ms / 1000;
         tv.tv_usec      = (ms % 1000) * 1000;
         if (evtimer_add( newTimer->evt, &tv) != 0 ){
-            event_free( newTimer->evt );
             delete newTimer;
             newTimer    = nullptr;
         }
@@ -272,10 +288,7 @@ Wrapper::delTimer(Timer* timer){
     int         ret = 0;
     TimerSet::iterator  it  = _timerSet.find( timer );
     if ( it != _timerSet.end() ){
-        Timer*  t   = *it;
-        event_del( t->evt );
-        event_free(t->evt );
-        delete  t;
+        delete  *it;
         _timerSet.erase( it );
     }
     else{
@@ -329,9 +342,8 @@ Wrapper::clean(){
     if ( _started && ! _stopped){
         stop();
     }
-    vector<struct evconnlistener*>::iterator    it;
-    for( it = _lev.begin(); it != _lev.end(); it++){
-        evconnlistener_free( *it );
+    for( auto& listener : _lev ){
+        evconnlistener_free( listener );
     }
     _lev.resize( 0 );
     //
@@ -343,9 +355,8 @@ Wrapper::clean(){
         }
     }
     //
-    vector<struct evhttp*>::iterator    it_h;
-    for( it_h = _http.begin(); it_h != _http.end(); it_h++){
-        evhttp_free( *it_h );
+    for( auto& h : _http){
+        evhttp_free( h );
     }
     _http.resize( 0 );
     //
@@ -472,19 +483,15 @@ Wrapper::startHttpClient( string remoteAddr, uint16_t port, string localAddr){
 }
 
 #define     _CLEAN_CONNECTION_SET( cs )                             \
-    ConnectionSet::iterator     it_cs   = cs.begin();               \
-    for(; it_cs != cs.end(); it_cs++){                              \
-        Connection* conn    = *it_cs;                               \
-        onConnectionClose( conn );                                  \
-        delete  conn;                                               \
+    for( auto& c : cs ){                                            \
+        delete  c;                                                  \
     }                                                               \
     cs.clear();
 
 void
 Wrapper::stopTcpServer(){
-    vector<struct evconnlistener*>::iterator    it;
-    for(it = _lev.begin(); it != _lev.end(); it++){
-        evconnlistener_free( * it );
+    for( auto& listener : _lev ){
+        evconnlistener_free( listener );
     }
     _lev.resize( 0 );
     _CLEAN_CONNECTION_SET( _tcpServerConnectionSet );
@@ -497,9 +504,8 @@ Wrapper::stopTcpClient(){
 
 void
 Wrapper::stopHttpServer(){
-    vector<struct evhttp*>::iterator    it;
-    for(it = _http.begin(); it != _http.end(); it++){
-        evhttp_free( *it );
+    for( auto& h : _http ){
+        evhttp_free( h );
     }
     _http.resize( 0 );
     _CLEAN_CONNECTION_SET( _httpServerConnectionSet );
@@ -514,7 +520,8 @@ int
 Wrapper::makeHttpRequest(   Connection*     conn,
                             evhttp_cmd_type cmd,
                             const char*     uri){
-    int     ret = evhttp_make_request( conn->_httpConn, conn->_httpReq, cmd, uri );
+    int     ret =
+        evhttp_make_request( conn->_httpConn, conn->_httpReq, cmd, uri );
     if (ret < 0){
         conn->setHttpReq( nullptr );
     }

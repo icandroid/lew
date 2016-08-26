@@ -61,7 +61,7 @@ public:
         args    = nullptr;
         evt     = nullptr;
     }
-    ~Timer(){};
+    ~Timer();
     Wrapper*            owner;      // the wrapper who owns the timer.
     timer_handler_t     handler;    // the handler to be called.
     void*               args;       // optional data.

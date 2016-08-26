@@ -27,6 +27,7 @@
  *
  * */
 #include    "lew/connection.h"
+#include    "lew/wrapper.h"
 
 NS_LEW_BEGIN();
 
@@ -46,6 +47,7 @@ Connection::Connection(
 }
 
 Connection::~Connection(){
+    _owner->onConnectionClose( this );
     if (_bev){
         bufferevent_free( _bev );
         _bev    = nullptr;

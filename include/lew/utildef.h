@@ -49,13 +49,6 @@
 #else
 #   define  DBG_PRINT(...)
 #endif
-/*
-#if defined(DEBUG) || defined(_DEBUG)
-#   define  DBG_PRINT(...)       { fprintf(stderr, __VAR_ARGS__);  }
-#else
-#   define  DBG_PRINT(...)
-#endif
-*/
 
 #endif
 
