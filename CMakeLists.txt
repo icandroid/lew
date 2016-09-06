@@ -27,4 +27,6 @@ target_link_libraries( test_lew pthread )
 target_link_libraries( test_lew event)
 target_link_libraries( test_lew event_pthreads)
 
+install(TARGETS ${PROJ_NAME} DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
+install(DIRECTORY ${PROJ_ROOT}/include/lew    DESTINATION ${CMAKE_INSTALL_PREFIX}/include)
 
