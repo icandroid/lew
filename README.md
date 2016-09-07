@@ -22,8 +22,9 @@ accept connections, and run `./c10kclient -h <your host> -p <port> -c <count>`
 to make connections.
 on OSX, the test should be run with root, only root can get enough limits
 of open files:
-    `launchctl limit maxfiles 1000000 1000000`
-    `ulimit -n 20000`
+
+1.  launchctl limit maxfiles 1000000 1000000
+2.  ulimit -n 20000
 
 for usage, please check the test cases in file `test/test_tcp_http.cc`.
 

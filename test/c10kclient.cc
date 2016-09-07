@@ -10,8 +10,8 @@
 #include <memory>
 #include <exception>
 #include <string>
-#include "cxxopts.hpp"
 #include "lew/wrapper.h"
+#include "Flags.hpp"
 
 using   namespace   std;
 
@@ -82,30 +82,23 @@ int main(int argc, char* argv[]){
 #define     DEFAULT_PORT        7000
 #define     DEFAULT_COUNT       1
 
-    cxxopts::Options    opts("c10kclient",
-                             "c10k client, which tests the capability of "
-                             "concurrent connections.");
     int     port        = DEFAULT_PORT;
     int     count       = DEFAULT_COUNT;
     string  host_addr   = DEFAULT_HOST;
-    opts.add_options()
-        ("h,host", "host address, default to " DEFAULT_HOST,
-            cxxopts::value<string>(host_addr))
-        ("p,port", "remote port, default to 7000",
-            cxxopts::value<int>(port) )
-        ("c,connections", "concurrent connections to remote server",
-            cxxopts::value<int>(count) );
-    try{
-        opts.parse(argc, argv);
-    }
-    catch(exception& e){
-        string  help_info   = opts.help( opts.groups() );
-        cout << help_info << endl;
+
+    Flags   opts;
+
+    opts.Var(host_addr, 'h', "host", string(DEFAULT_HOST),
+             "remote address, default to " DEFAULT_HOST);
+    opts.Var(port,      'p', "port", int(port),
+             "remote port, default to 7000");
+    opts.Var(count,     'c', "count", int(count),
+             "count of connections to remote, default to 1");
+    //
+    if (!opts.Parse(argc, argv) ){
+        opts.PrintHelp(argv[0]);
         return 1;
-    }
-    if (opts.count("host"))     host_addr   = opts["host"].as<string>();
-    if (opts.count("port"))     port        = opts["port"].as<int>();
-    if (opts.count("c"))        count       = opts["c"].as<int>();
+    };
 
     unique_ptr<C10KClient>  client( new C10KClient() );
     client->remote_host     = host_addr;

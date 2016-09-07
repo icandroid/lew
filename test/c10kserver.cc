@@ -10,8 +10,8 @@
 #include <memory>
 #include <exception>
 #include <string>
-#include "cxxopts.hpp"
 #include "lew/wrapper.h"
+#include "Flags.hpp"
 
 using   namespace   std;
 
@@ -67,24 +67,18 @@ int main(int argc, char* argv[]){
 
     int     port        = DEFAULT_PORT;
     string  listen_addr = DEFAULT_HOST;
-    cxxopts::Options    opts("c10kserver",
-                             "c10k server, which tests the capability of "
-                             "concurrent connections.");
-    opts.add_options()
-        ("l,listen", "listen address, default to " DEFAULT_HOST,
-            cxxopts::value<string>(listen_addr))
-        ("p,port", "listen port, default to 7000",
-            cxxopts::value<int>(port) );
-    try{
-        opts.parse(argc, argv);
-    }
-    catch(exception& e){
-        string  help_info   = opts.help( opts.groups() );
-        cout << help_info << endl;
+
+    Flags   opts;
+
+    opts.Var(listen_addr, 'l', "listen", string(DEFAULT_HOST),
+             "listen address, default to " DEFAULT_HOST);
+    opts.Var(port, 'p', "port", int(port), "listen port, default to 7000");
+    //
+    if (!opts.Parse(argc, argv) ){
+        opts.PrintHelp(argv[0]);
         return 1;
-    }
-    if (opts.count("listen") )  listen_addr = opts["listen"].as<string>();
-    if (opts.count("port") )    port        = opts["port"].as<int>();
+    };
+
     cout << "listen on " << listen_addr << ":" << port << endl;
     cout << "press Ctrl-C to exit" << endl;
     //
