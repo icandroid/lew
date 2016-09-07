@@ -31,6 +31,7 @@
 #include    <cerrno>
 #include    <cassert>
 #include    <csignal>
+#include    <cstdio>
 #include    <cstring>
 #include    "lew/wrapper.h"
 
@@ -179,7 +180,12 @@ _listen_cb( struct evconnlistener*      listener,
 
 static void
 _listen_error_cb(struct evconnlistener* listener, void* ctx){
-    fprintf(stderr, "%s listener %p\n", __FUNCTION__, listener);
+    char    err_info[1024];
+    strerror_r( errno, err_info, sizeof(err_info) );
+    fprintf(stderr, "%s listener %p, error: %s\n",
+            __FUNCTION__,
+            listener,
+            err_info );
 }
 
 static void
